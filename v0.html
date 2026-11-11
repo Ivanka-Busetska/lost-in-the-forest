@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>LOST IN THE FOREST — v0</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap">
+<style>
+:root{--bg:#0f1f17;--panel:#173026;--ink:#efe6cf;--gold:#d4a937;--mute:#9fb3a4;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1f17;--panel:#173026;--ink:#efe6cf}}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:Montserrat,system-ui,sans-serif}
+main{max-width:680px;margin:0 auto;padding:14px}
+h1{font-size:20px;margin:4px 0 2px;letter-spacing:.5px}
+p.sub{margin:0 0 10px;color:var(--mute);font-size:13px}
+canvas{width:100%;height:auto;display:block;border:2px solid var(--gold);border-radius:6px;background:#1c3a2a;touch-action:none}
+.hud{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+.pill{background:var(--panel);border:1px solid #2a4d3c;border-radius:6px;padding:6px 10px;font-size:13px}
+.pill b{color:var(--gold)}
+#msg{min-height:22px;font-size:14px;margin:6px 0}
+.btns{display:flex;gap:8px}
+button{font:600 14px Montserrat,sans-serif;background:var(--gold);color:#1a1405;border:0;border-radius:6px;padding:10px 16px;cursor:pointer}
+button.alt{background:var(--panel);color:var(--ink);border:1px solid var(--gold)}
+button:focus-visible{outline:3px solid var(--ink);outline-offset:2px}
+details{margin-top:12px;font-size:13px;color:var(--mute)}
+</style>
+</head>
+<body>
+<main>
+<h1>LOST IN THE FOREST</h1>
+<p class="sub">Версія v0: знайди ключ і відчини ворота.</p>
+<canvas id="c" width="640" height="400" aria-label="Ігрове поле"></canvas>
+<div class="hud">
+  <div class="pill">Ключ: <b id="sKey">на землі</b></div>
+  <div class="pill">Ворота: <b id="sGate">замкнені</b></div>
+  <div class="pill">Відчинень: <b id="sCount">0</b></div>
+</div>
+<div id="msg" role="status">Рухайся: стрілки / WASD або торкнись поля. Дія: E або пробіл.</div>
+<div class="btns">
+  <button id="bAct">Дія (E)</button>
+  <button id="bRes" class="alt">Почати ще раз (R)</button>
+</div>
+<details><summary>Керування і межі v0</summary>
+<p>Стрілки або WASD — рух. E або пробіл — взяти ключ чи відчинити ворота. R — перезапуск. На телефоні: торкнись поля, щоб іти до точки.</p>
+<p>Відстань дії — 48 пікселів. Це заглушка-прототип: колізії прості, звуку немає.</p></details>
+</main>
+<script>
+const cv=document.getElementById('c'),g=cv.getContext('2d');
+const REACH=48,SPEED=2.6;
+const walls=[{x:250,y:120,w:90,h:30},{x:250,y:250,w:30,h:70},{x:340,y:150,w:30,h:50}];
+const keyPos={x:90,y:300},gatePos={x:585,y:200};
+let s,keys={},target=null,count=0;
+function reset(){
+  s={px:60,py:200,hasKey:false,gateOpen:false,msg:'Почни гру ще раз: знайди ключ.'};
+  target=null;ui();say('Гру перезапущено. Ключ знову на землі, ворота замкнені.');
+}
+function say(t){document.getElementById('msg').textContent=t}
+function ui(){
+  document.getElementById('sKey').textContent=s.hasKey?'у тебе':'на землі';
+  document.getElementById('sGate').textContent=s.gateOpen?'відчинені':'замкнені';
+  document.getElementById('sCount').textContent=count;
+}
+const dist=(ax,ay,bx,by)=>Math.hypot(ax-bx,ay-by);
+function act(){
+  if(!s.hasKey&&dist(s.px,s.py,keyPos.x,keyPos.y)<=REACH){
+    s.hasKey=true;say('Ти підняв ключ.');ui();return;
+  }
+  if(dist(s.px,s.py,gatePos.x,gatePos.y)<=REACH+20){
+    if(s.gateOpen){say('Ворота вже відчинені.');return;}
+    if(!s.hasKey){say('Ворота замкнені. Потрібен ключ.');return;}
+    s.gateOpen=true;count++;say('Ворота відчинено! Натисни R, щоб пройти ще раз.');ui();return;
+  }
+  say('Тут нічого немає. Підійди ближче до ключа чи воріт.');
+}
+function blocked(x,y){
+  if(x<14||x>626||y<14||y>386)return true;
+  if(!s.gateOpen&&x>gatePos.x-18&&y>gatePos.y-60&&y<gatePos.y+60)return true;
+  return walls.some(w=>x>w.x-10&&x<w.x+w.w+10&&y>w.y-10&&y<w.y+w.h+10);
+}
+function step(){
+  let dx=0,dy=0;
+  if(keys.ArrowLeft||keys.a)dx-=1;if(keys.ArrowRight||keys.d)dx+=1;
+  if(keys.ArrowUp||keys.w)dy-=1;if(keys.ArrowDown||keys.s)dy+=1;
+  if(!dx&&!dy&&target){
+    const d=dist(s.px,s.py,target.x,target.y);
+    if(d<4)target=null;else{dx=(target.x-s.px)/d;dy=(target.y-s.py)/d;}
+  }
+  if(dx||dy){
+    const m=Math.hypot(dx,dy);dx=dx/m*SPEED;dy=dy/m*SPEED;
+    if(!blocked(s.px+dx,s.py))s.px+=dx;
+    if(!blocked(s.px,s.py+dy))s.py+=dy;
+  }
+}
+function draw(){
+  g.fillStyle='#1c3a2a';g.fillRect(0,0,640,400);
+  g.fillStyle='#d9c9a3';g.fillRect(0,185,640,30);
+  walls.forEach(w=>{g.fillStyle='#6b6a5e';g.fillRect(w.x,w.y,w.w,w.h);g.fillStyle='#4a5a3a';g.fillRect(w.x,w.y,w.w,6)});
+  [[40,60],[120,110],[180,50],[470,70],[520,320],[430,340],[60,360],[200,330]].forEach(t=>{
+    g.fillStyle='#0f2a1b';g.beginPath();g.arc(t[0],t[1],24,0,7);g.fill();
+  });
+  if(!s.hasKey){g.fillStyle='#4a7a3a';g.beginPath();g.arc(keyPos.x,keyPos.y,16,0,7);g.fill();
+    g.fillStyle='#d4a937';g.fillRect(keyPos.x-8,keyPos.y-3,16,6);g.beginPath();g.arc(keyPos.x-8,keyPos.y,6,0,7);g.fill();}
+  g.fillStyle=s.gateOpen?'#2a2a22':'#7a5a2a';
+  g.fillRect(gatePos.x,gatePos.y-55,s.gateOpen?6:20,110);
+  if(!s.gateOpen){g.strokeStyle='#aaa';g.lineWidth=2;for(let i=0;i<3;i++){g.beginPath();g.moveTo(gatePos.x-6,gatePos.y-40+i*40);g.lineTo(gatePos.x+26,gatePos.y-30+i*40);g.stroke();}}
+  g.fillStyle='#efe6cf';g.beginPath();g.arc(s.px,s.py,10,0,7);g.fill();
+  g.fillStyle='#d4a937';g.fillRect(s.px-10,s.py-14,20,5);
+}
+function loop(){step();draw();requestAnimationFrame(loop)}
+addEventListener('keydown',e=>{
+  const k=e.key.length===1?e.key.toLowerCase():e.key;keys[k]=true;
+  if(k==='e'||k===' ')act();if(k==='r')reset();
+  if(k.startsWith('Arrow')||k===' ')e.preventDefault();
+});
+addEventListener('keyup',e=>{keys[e.key.length===1?e.key.toLowerCase():e.key]=false});
+cv.addEventListener('pointerdown',e=>{
+  const r=cv.getBoundingClientRect();
+  target={x:(e.clientX-r.left)*640/r.width,y:(e.clientY-r.top)*400/r.height};
+});
+document.getElementById('bAct').onclick=act;
+document.getElementById('bRes').onclick=reset;
+reset();say('Рухайся: стрілки / WASD або торкнись поля. Дія: E або пробіл.');loop();
+</script>
+</body>
+</html>

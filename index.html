@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>LOST IN THE FOREST</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap">
+<style>
+:root{--bg:#0d1a13;--panel:#163023;--ink:#efe6cf;--gold:#d4a937;--mute:#9fb3a4;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0d1a13}}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:Montserrat,system-ui,sans-serif}
+main{max-width:700px;margin:0 auto;padding:14px}
+h1{font-size:20px;margin:4px 0 2px}
+p.sub{margin:0 0 10px;color:var(--mute);font-size:13px}
+canvas{width:100%;height:auto;display:block;border:2px solid var(--gold);border-radius:8px;background:#1c3a2a;touch-action:none}
+.hud{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+.pill{background:var(--panel);border:1px solid #2a4d3c;border-radius:6px;padding:6px 10px;font-size:13px}
+.pill b{color:var(--gold)}
+#msg{min-height:40px;font-size:14px;margin:6px 0}
+.btns{display:flex;gap:8px}
+button{font:600 14px Montserrat,sans-serif;background:var(--gold);color:#1a1405;border:0;border-radius:6px;padding:10px 16px;cursor:pointer}
+button.alt{background:var(--panel);color:var(--ink);border:1px solid var(--gold)}
+button:focus-visible{outline:3px solid var(--ink);outline-offset:2px}
+details{margin-top:12px;font-size:13px;color:var(--mute)}
+
+.stage{position:relative}
+#ov{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center;background:rgba(8,16,12,.78);border-radius:8px;padding:16px}
+#ov h2{font-size:clamp(26px,7vw,44px);margin:0;letter-spacing:1px;color:var(--gold)}
+#ov p{margin:0;color:var(--ink);font-size:14px;max-width:420px}
+#ov .row{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+button:disabled{opacity:.4;cursor:not-allowed}
+body.idle .hud,body.idle .btns,body.idle #msg,body.idle details{display:none}
+</style>
+</head>
+<body>
+<main>
+<h1>LOST IN THE FOREST</h1>
+<p class="sub">Знайди ключ, обійди пастки й вибирайся з лісу.</p>
+<div class="stage"><canvas id="c" width="640" height="400" aria-label="Ігрове поле"></canvas><div id="ov"></div></div>
+<div class="hud">
+  <div class="pill">Рівень: <b id="sLvl">1/3</b></div>
+  <div class="pill">Ключ: <b id="sKey">на землі</b></div>
+  <div class="pill">Ворота: <b id="sGate">замкнені</b></div>
+  <div class="pill">Відчинень: <b id="sCount">0</b></div>
+  <div class="pill">Іскри: <b id="sSp">0/3</b></div>
+</div>
+<div id="msg" role="status"></div>
+<div class="btns">
+  <button id="bAct">Дія (E)</button>
+  <button id="bRes" class="alt">Почати рівень ще раз (R)</button>
+</div>
+<details><summary>Керування</summary>
+<p>Shift — ривок (витрачає смужку сил зліва вгорі). Збирай золоті іскри для зірок. Колючки та лісові духи повертають тебе на старт і забирають ключ. Стрілки або WASD — рух. E або пробіл — взяти ключ, активувати руну, відчинити ворота. R — перезапуск рівня. На телефоні: торкнись поля, щоб іти до точки. Відстань дії — 48 пікселів.</p></details>
+</main>
+<script>
+const cv=document.getElementById('c'),g=cv.getContext('2d');
+const REACH=48,SPEED=2.6,GX=608;
+const LV=[
+{start:[50,200],key:[90,310],gate:200,dark:false,
+ walls:[[250,110,100,30],[250,250,30,80],[340,120,30,50]],
+ trees:[[40,60],[130,100],[190,50],[470,70],[520,330],[430,350],[60,360],[200,340],[560,90]],
+ path:[[0,200],[200,215],[320,195],[460,215],[640,200]],
+ name:'Ключ на моху',sparks:[[532,203],[300,300],[190,150]],
+ thorns:[[50,268,80,18],[520,150,24,26],[520,230,24,26]],spirits:[[140,350,330,350,1.4]],
+ intro:'Рівень 1. Підніми ключ, але стережись духа та колючок.'},
+{start:[50,340],key:[300,190],gate:300,dark:false,runes:[[120,90],[330,330],[500,110]],
+ walls:[[180,0,24,230],[180,290,24,110],[380,90,24,310],[380,0,24,40]],
+ trees:[[60,40],[100,380],[250,60],[270,380],[420,380],[540,200],[580,50],[600,380],[470,250]],
+ path:[[50,340],[110,250],[190,260],[290,260],[330,200],[392,60],[460,60],[500,110],[560,300],[640,300]],
+ name:'Руни',sparks:[[300,120],[460,200],[100,300]],
+ thorns:[[220,300,60,18],[520,270,24,60]],spirits:[[210,240,370,240,1.5],[470,160,470,340,1.6]],
+ intro:'Рівень 2. Активуй руни за кількістю точок: 1, 2, 3. Обминай духів.'},
+{start:[50,60],key:[230,330],gate:340,dark:true,
+ walls:[[150,0,24,150],[150,210,24,190],[300,60,24,340],[450,0,24,300]],
+ trees:[[40,300],[90,370],[220,60],[230,200],[380,200],[390,330],[520,100],[540,250],[560,380],[100,150]],
+ path:[[0,60],[100,120],[160,180],[240,200],[260,40],[380,30],[430,150],[470,350],[640,340]],
+ name:'Темрява',sparks:[[100,250],[380,120],[480,330]],
+ thorns:[[200,270,90,16],[540,300,24,24]],spirits:[[190,235,280,235,1.3],[390,80,390,290,1.5],[540,250,540,380,1.2]],
+ intro:'Рівень 3. Темно, а духи не сплять. Знайди ключ і вихід.'}
+];
+let lvl=0,s,keys={},target=null,count=0,bg,t=0,scr='title',unlocked=0,sp=[];
+try{unlocked=+localStorage.getItem('litf')||0}catch(e){}
+const ov=document.getElementById('ov');
+function show(h){ov.innerHTML=h;ov.style.display='flex';document.body.classList.add('idle')}
+function hide(){ov.style.display='none';document.body.classList.remove('idle')}
+function title(){scr='title';load(0);show('<h2>LOST IN THE FOREST</h2><p>Ти загубився в лісі. Знайди ключ, обійди колючки й духів і відчини ворота.</p><div class="row"><button onclick="menu()">Почати</button></div>')}
+function menu(){scr='menu';let b=LV.map((l,i)=>'<button '+(i>unlocked?'disabled':'')+' onclick="play('+i+')">'+(i+1)+'. '+l.name+(i>unlocked?' (закрито)':'')+'</button>').join('');
+  show('<h2>Вибір рівня</h2><div class="row" style="flex-direction:column">'+b+'</div><div class="row"><button class="alt" onclick="title()">Назад</button></div>')}
+function play(n){load(n);scr='play';hide();say(LV[n].intro)}
+function won(){
+  unlocked=Math.max(unlocked,lvl+1);try{localStorage.setItem('litf',unlocked)}catch(e){}
+  scr='over';beep(784,.3);
+  if(lvl<LV.length-1)show('<h2>Рівень '+(lvl+1)+' пройдено</h2><p>Іскор зібрано: '+s.sparks.length+' з 3 '+'★'.repeat(s.sparks.length)+'☆'.repeat(3-s.sparks.length)+'</p><div class="row"><button onclick="play('+(lvl+1)+')">Наступний рівень</button><button class="alt" onclick="menu()">Вибір рівнів</button></div>');
+  else show('<h2>Ти вибрався з лісу!</h2><p>Усі три рівні пройдено.</p><div class="row"><button onclick="menu()">Вибір рівнів</button><button class="alt" onclick="title()">На початок</button></div>')}
+function hit(why){
+  beep(120,.25,'sawtooth');s.px=LV[lvl].start[0];s.py=LV[lvl].start[1];s.hasKey=false;target=null;s.flash=25;ui();say(why+' Ти повернувся на старт, ключ втрачено.')}
+function rnd(seed){return()=>{seed|=0;seed=seed+0x6D2B79F5|0;let x=Math.imul(seed^seed>>>15,1|seed);x=x+Math.imul(x^x>>>7,61|x)^x;return((x^x>>>14)>>>0)/4294967296}}
+const flies=Array.from({length:16},(_,i)=>({x:Math.random()*640,y:Math.random()*400,p:Math.random()*6}));
+function tree(c,x,y){
+  c.fillStyle='rgba(0,0,0,.28)';c.beginPath();c.ellipse(x+6,y+22,26,9,0,0,7);c.fill();
+  c.fillStyle='#4a3320';c.fillRect(x-5,y+4,10,20);
+  [['#0f3320',0,0,26],['#17482c',-3,-9,21],['#22603a',-5,-17,14]].forEach(a=>{c.fillStyle=a[0];c.beginPath();c.arc(x+a[1],y+a[2],a[3],0,7);c.fill()});
+}
+function wall(c,w){
+  const [x,y,ww,h]=w;
+  c.fillStyle='rgba(0,0,0,.3)';c.fillRect(x+5,y+6,ww,h);
+  c.fillStyle='#7b7a6c';c.fillRect(x,y,ww,h);
+  c.strokeStyle='#4d4c42';c.lineWidth=1;
+  for(let i=0;i<Math.max(ww,h);i+=22){c.beginPath();if(ww>h){c.moveTo(x+i,y);c.lineTo(x+i,y+h)}else{c.moveTo(x,y+i);c.lineTo(x+ww,y+i)}c.stroke()}
+  c.strokeRect(x,y,ww,h);
+  c.fillStyle='#5f8a3c';c.fillRect(x,y,ww,5);c.fillRect(x,y,4,Math.min(h,18));
+}
+function build(){
+  const L=LV[lvl],r=rnd(lvl*77+5);
+  bg=document.createElement('canvas');bg.width=640;bg.height=400;const c=bg.getContext('2d');
+  const gr=c.createLinearGradient(0,0,0,400);gr.addColorStop(0,'#1f4430');gr.addColorStop(1,'#16331f');
+  c.fillStyle=gr;c.fillRect(0,0,640,400);
+  for(let i=0;i<700;i++){c.fillStyle=['#2b5a3a','#1b3d29','#336b44'][i%3];c.fillRect(r()*640,r()*400,2,r()*4+2)}
+  c.lineCap='round';c.lineJoin='round';
+  c.strokeStyle='#9c8a5e';c.lineWidth=36;c.beginPath();L.path.forEach((p,i)=>i?c.lineTo(...p):c.moveTo(...p));c.stroke();
+  c.strokeStyle='#cdb98a';c.lineWidth=30;c.stroke();
+  for(let i=0;i<60;i++){c.fillStyle='#b9a574';c.fillRect(r()*640,r()*400,3,2)}
+  L.walls.forEach(w=>wall(c,w));
+  [...L.trees].sort((a,b)=>a[1]-b[1]).forEach(p=>tree(c,p[0],p[1]));
+}
+function load(n){
+  lvl=n;const L=LV[n];build();sp=(L.spirits||[]).map(a=>({a:[a[0],a[1]],b:[a[2],a[3]],u:Math.random(),v:a[4]/Math.hypot(a[2]-a[0],a[3]-a[1]),x:a[0],y:a[1]}));
+  s={sparks:[],stam:100,px:L.start[0],py:L.start[1],hasKey:false,gateOpen:false,keyVis:!L.runes,next:1,done:[]};
+  target=null;s.flash=0;ui();
+}
+function say(m){document.getElementById('msg').textContent=m}
+function ui(){
+  document.getElementById('sLvl').textContent=(lvl+1)+'/3';
+  document.getElementById('sKey').textContent=s.hasKey?'у тебе':(s.keyVis?'на землі':'прихований');
+  document.getElementById('sGate').textContent=s.gateOpen?'відчинені':'замкнені';
+  document.getElementById('sCount').textContent=count;document.getElementById('sSp').textContent=s.sparks.length+'/3';
+}
+function reset(){
+  if(scr!=='play')return;
+  load(lvl);say('Рівень перезапущено. Ключ і ворота повернулися до початкового стану. '+LV[lvl].intro);
+}
+const dist=(a,b,c,d)=>Math.hypot(a-c,b-d);
+let AC;function beep(f,d=.1,ty='sine'){try{AC=AC||new (window.AudioContext||window.webkitAudioContext)();const o=AC.createOscillator(),gn=AC.createGain();o.type=ty;o.frequency.value=f;gn.gain.value=.06;o.connect(gn);gn.connect(AC.destination);o.start();gn.gain.exponentialRampToValueAtTime(.0001,AC.currentTime+d);o.stop(AC.currentTime+d)}catch(e){}}
+function act(){
+  if(scr!=='play')return;
+  const L=LV[lvl];
+  if(L.runes){
+    for(let i=0;i<L.runes.length;i++){
+      const r=L.runes[i];
+      if(dist(s.px,s.py,r[0],r[1])<=REACH){
+        if(s.done.includes(i)){say('Ця руна вже світиться.');return}
+        if(i+1===s.next){
+          s.done.push(i);s.next++;beep(520,.15);
+          if(s.next>L.runes.length){s.keyVis=true;say('Усі руни світяться! З’явився ключ.')}
+          else say('Руна '+(i+1)+' засяяла. Шукай наступну.');
+        }else{s.done=[];s.next=1;say('Не той порядок. Руни згасли. Почни з однієї точки.')}
+        ui();return;
+      }
+    }
+  }
+  if(s.keyVis&&!s.hasKey&&dist(s.px,s.py,L.key[0],L.key[1])<=REACH){s.hasKey=true;beep(660,.15);say('Ти підняв ключ.');ui();return}
+  if(dist(s.px,s.py,GX,L.gate)<=REACH+25){
+    if(s.gateOpen){say('Ворота вже відчинені. Іди далі.');return}
+    if(!s.hasKey){say('Ворота замкнені. Потрібен ключ.');return}
+    s.gateOpen=true;count++;beep(300,.3,'triangle');say('Ворота відчинено! Пройди крізь них.');ui();return;
+  }
+  say('Тут нічого немає. Підійди ближче.');
+}
+function blocked(x,y){
+  const L=LV[lvl],inGap=Math.abs(y-L.gate)<55;
+  if(x<14||y<14||y>386)return true;
+  if(x>626&&!(s.gateOpen&&inGap))return true;
+  if(!s.gateOpen&&x>GX-14&&inGap)return true;
+  if(L.walls.some(w=>x>w[0]-10&&x<w[0]+w[2]+10&&y>w[1]-10&&y<w[1]+w[3]+10))return true;
+  return L.trees.some(p=>dist(x,y,p[0],p[1]+6)<26);
+}
+function step(){
+  if(scr!=='play'){return}
+  let dx=0,dy=0;
+  if(keys.ArrowLeft||keys.a)dx-=1;if(keys.ArrowRight||keys.d)dx+=1;
+  if(keys.ArrowUp||keys.w)dy-=1;if(keys.ArrowDown||keys.s)dy+=1;
+  if(!dx&&!dy&&target){const d=dist(s.px,s.py,target.x,target.y);if(d<4)target=null;else{dx=(target.x-s.px)/d;dy=(target.y-s.py)/d}}
+  if(dx||dy){const m=Math.hypot(dx,dy),run=keys.Shift&&s.stam>0,V=run?SPEED*1.7:SPEED;if(run)s.stam=Math.max(0,s.stam-1.6);dx=dx/m*V;dy=dy/m*V;
+    if(!blocked(s.px+dx,s.py))s.px+=dx;if(!blocked(s.px,s.py+dy))s.py+=dy}
+  const L=LV[lvl];
+  sp.forEach(o=>{o.u+=o.v;if(o.u>1||o.u<0){o.v=-o.v;o.u=Math.max(0,Math.min(1,o.u))}
+    o.x=o.a[0]+(o.b[0]-o.a[0])*o.u;o.y=o.a[1]+(o.b[1]-o.a[1])*o.u;
+    if(dist(s.px,s.py,o.x,o.y)<22)hit('Тебе зловив лісовий дух.')});
+  if((L.thorns||[]).some(r=>s.px>r[0]-6&&s.px<r[0]+r[2]+6&&s.py>r[1]-6&&s.py<r[1]+r[3]+6))hit('Ти вколовся об колючки.');
+  if(s.flash>0)s.flash--;if(!(keys.Shift&&(dx||dy)))s.stam=Math.min(100,s.stam+.5);
+  (L.sparks||[]).forEach((p,i)=>{if(!s.sparks.includes(i)&&dist(s.px,s.py,p[0],p[1])<20){s.sparks.push(i);beep(880,.12);ui()}});
+  if(s.gateOpen&&s.px>634)won();
+}
+function draw(){
+  t+=.03;const L=LV[lvl];
+  g.drawImage(bg,0,0);
+  if(L.runes)L.runes.forEach((r,i)=>{
+    const on=s.done.includes(i);
+    g.fillStyle='rgba(0,0,0,.3)';g.beginPath();g.ellipse(r[0]+3,r[1]+8,20,8,0,0,7);g.fill();
+    g.fillStyle=on?'#e8c65a':'#6d6c60';g.beginPath();g.arc(r[0],r[1],18,0,7);g.fill();
+    g.strokeStyle='#3c3b33';g.lineWidth=2;g.stroke();
+    g.fillStyle=on?'#6a4a00':'#2e2d27';
+    for(let k=0;k<=i;k++){g.beginPath();g.arc(r[0]-(i*5)+k*10,r[1],3,0,7);g.fill()}
+    if(on){g.fillStyle='rgba(255,220,90,.25)';g.beginPath();g.arc(r[0],r[1],30+Math.sin(t*3)*3,0,7);g.fill()}
+  });
+  if(s.keyVis&&!s.hasKey){
+    const [kx,ky]=L.key;
+    g.fillStyle='#46783a';g.beginPath();g.ellipse(kx,ky+6,20,10,0,0,7);g.fill();
+    g.fillStyle='rgba(255,220,90,'+(.18+.08*Math.sin(t*3))+')';g.beginPath();g.arc(kx,ky,26,0,7);g.fill();
+    g.fillStyle='#e8c65a';g.fillRect(kx-4,ky-3,18,5);g.fillRect(kx+10,ky-3,4,10);g.beginPath();g.arc(kx-6,ky,7,0,7);g.fill();
+    g.fillStyle='#46783a';g.beginPath();g.arc(kx-6,ky,3,0,7);g.fill();
+  }
+  const gy=L.gate;
+  g.fillStyle='#7b7a6c';g.fillRect(GX-10,gy-72,26,18);g.fillRect(GX-10,gy+54,26,18);
+  g.fillStyle='#5f8a3c';g.fillRect(GX-10,gy-72,26,4);
+  if(!s.gateOpen){
+    g.fillStyle='#6b4a22';for(let i=0;i<5;i++)g.fillRect(GX-6+i*3,gy-54,2,108);
+    g.strokeStyle='#aab';g.lineWidth=3;for(let i=0;i<3;i++){g.beginPath();g.moveTo(GX-10,gy-40+i*36);g.lineTo(GX+16,gy-26+i*36);g.stroke()}
+  }else{g.fillStyle='rgba(255,220,90,'+(.18+.06*Math.sin(t*4))+')';g.fillRect(GX-4,gy-54,40,108)}
+  (L.thorns||[]).forEach(r=>{g.fillStyle='#1d2a14';g.fillRect(r[0],r[1]+r[3]-6,r[2],6);
+    for(let x=r[0];x<r[0]+r[2];x+=8)for(let y=r[1];y<r[1]+r[3]-4;y+=10){g.fillStyle=(x+y)%16?'#7a8f3a':'#a34a2f';g.beginPath();g.moveTo(x,y+10);g.lineTo(x+4,y);g.lineTo(x+8,y+10);g.fill()}});
+  sp.forEach(o=>{const w=Math.sin(t*4+o.x)*2;
+    g.fillStyle='rgba(150,210,255,.18)';g.beginPath();g.arc(o.x,o.y,28,0,7);g.fill();
+    g.fillStyle='rgba(205,235,255,.9)';g.beginPath();g.arc(o.x,o.y-3+w,13,Math.PI,0);g.lineTo(o.x+13,o.y+12+w);
+    for(let i=0;i<4;i++)g.lineTo(o.x+13-i*6.5-3,o.y+(i%2?12:17)+w);g.lineTo(o.x-13,o.y+12+w);g.fill();
+    g.fillStyle='#15303f';g.beginPath();g.arc(o.x-5,o.y-4+w,2.5,0,7);g.arc(o.x+5,o.y-4+w,2.5,0,7);g.fill()});
+  (L.sparks||[]).forEach((p,i)=>{if(s.sparks.includes(i))return;g.fillStyle='rgba(255,230,120,'+(.25+.15*Math.sin(t*4+i))+')';g.beginPath();g.arc(p[0],p[1],16,0,7);g.fill();g.fillStyle='#ffe27a';g.beginPath();for(let k=0;k<8;k++){const r=k%2?3:8,a=k*Math.PI/4;g.lineTo(p[0]+Math.cos(a)*r,p[1]+Math.sin(a)*r)}g.fill()});
+  const bob=Math.sin(t*5)*1.5;
+  g.fillStyle='rgba(0,0,0,.3)';g.beginPath();g.ellipse(s.px,s.py+12,11,4,0,0,7);g.fill();
+  g.fillStyle='#2f6f4a';g.beginPath();g.moveTo(s.px-11,s.py+11+bob);g.lineTo(s.px,s.py-8+bob);g.lineTo(s.px+11,s.py+11+bob);g.fill();
+  g.fillStyle='#efe6cf';g.beginPath();g.arc(s.px,s.py-8+bob,6,0,7);g.fill();
+  g.fillStyle='#d4a937';g.beginPath();g.moveTo(s.px-9,s.py-10+bob);g.lineTo(s.px,s.py-26+bob);g.lineTo(s.px+9,s.py-10+bob);g.fill();
+  g.fillStyle='#ffd966';g.beginPath();g.arc(s.px+12,s.py+4+bob,3,0,7);g.fill();
+  flies.forEach(f=>{f.p+=.02;const x=f.x+Math.sin(f.p*2)*20,y=f.y+Math.cos(f.p*1.5)*14;
+    g.fillStyle='rgba(255,240,140,'+(.4+.4*Math.sin(f.p*4))+')';g.beginPath();g.arc(x,y,2,0,7);g.fill()});
+  let v;
+  if(L.dark){v=g.createRadialGradient(s.px,s.py,40,s.px,s.py,150);v.addColorStop(0,'rgba(4,8,6,0)');v.addColorStop(1,'rgba(4,8,6,.97)')}
+  else{v=g.createRadialGradient(320,200,180,320,200,420);v.addColorStop(0,'rgba(0,0,0,0)');v.addColorStop(1,'rgba(0,0,0,.45)')}
+  g.fillStyle=v;g.fillRect(0,0,640,400);
+  if(scr==='play'){g.fillStyle='rgba(0,0,0,.45)';g.fillRect(10,10,104,10);g.fillStyle=s.stam>25?'#d4a937':'#c0503a';g.fillRect(12,12,s.stam,6)}
+  if(s.flash>0){g.fillStyle='rgba(200,40,30,'+s.flash/60+')';g.fillRect(0,0,640,400)}
+}
+function loop(){step();draw();requestAnimationFrame(loop)}
+addEventListener('keydown',e=>{
+  const k=e.key.length===1?e.key.toLowerCase():e.key;keys[k]=true;
+  if(k==='e'||k===' ')act();if(k==='r')reset();
+  if(k.startsWith('Arrow')||k===' ')e.preventDefault();
+});
+addEventListener('keyup',e=>{keys[e.key.length===1?e.key.toLowerCase():e.key]=false});
+cv.addEventListener('pointerdown',e=>{const r=cv.getBoundingClientRect();
+  target={x:(e.clientX-r.left)*640/r.width,y:(e.clientY-r.top)*400/r.height}});
+document.getElementById('bAct').onclick=act;
+document.getElementById('bRes').onclick=reset;
+title();loop();
+</script>
+</body>
+</html>
